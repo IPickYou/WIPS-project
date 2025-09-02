@@ -14,6 +14,10 @@ st.title(" 특허 분류기")
 st.markdown("---")
 
 # 세션 상태 초기화
+if "api_url" not in st.session_state:
+    st.session_state.api_url = "http://localhost:1234/v1/chat/completions"
+if "api_model" not in st.session_state:
+    st.session_state.api_model = "llama-3.2-1b"
 if 'classification_results' not in st.session_state:
     st.session_state.classification_results = None
 if 'model_loaded' not in st.session_state:

@@ -53,7 +53,7 @@ def show():
             label_to_id = {label: idx for idx, label in enumerate(unique_labels)}
             id_to_label = {idx: label for label, idx in label_to_id.items()}
 
-# 이제 Series이므로 map이 정상 작동
+            # 이제 Series이므로 map이 정상 작동
             clean_df['label_id'] = label_series.map(label_to_id)
 
             st.write("**라벨 매핑**")
