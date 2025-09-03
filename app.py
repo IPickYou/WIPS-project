@@ -7,10 +7,11 @@ import streamlit as st
 load_dotenv()
 
 # 페이지 설정
-st.set_page_config(page_title="특허 분류기", layout="wide")
+st.set_page_config(page_title = "특허 문서 분류 자동화 플랫폼", layout = "wide")
 
 # 메인 타이틀
-st.title(" 특허 분류기")
+st.title("특허 문서 분류 자동화 플랫폼")
+
 st.markdown("---")
 
 # 세션 상태 초기화
