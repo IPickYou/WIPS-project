@@ -2,7 +2,6 @@ from utils import trained_model
 
 import os
 import streamlit as st
-import torch
 
 def show():
     st.write("### 모델 추론")
