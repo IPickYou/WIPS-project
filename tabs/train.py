@@ -1,8 +1,6 @@
 from datasets import Dataset
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from sklearn.model_selection import train_test_split
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, BitsAndBytesConfig, DataCollatorWithPadding
-from trl import SFTTrainer, SFTConfig
+from utils.transformers_settings import LLMModel
 
 import os
 import pandas as pd
@@ -106,97 +104,26 @@ def show():
             if st.button("학습 시작", type="primary"):
                 with st.spinner("모델 학습을 진행합니다..."):
                     try:
-                        # Tokenizer
-                        tokenizer = AutoTokenizer.from_pretrained(base_model_id, trust_remote_code=True, use_fast=False)
-                        if tokenizer.pad_token is None:
-                            if tokenizer.eos_token:
-                                tokenizer.pad_token = tokenizer.eos_token
-                            else:
-                                tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-                        tokenizer.padding_side = 'right'
+                        # Model
+                        model = LLMModel(base_model_id, unique_labels, max_length)
 
                         # Dataset
                         train_dataset = Dataset.from_dict({'text': train_texts, 'label': train_labels})
                         test_dataset = Dataset.from_dict({'text': test_texts, 'label': test_labels})
 
-                        def preprocess_function(examples):
-                            tokenized = tokenizer(
-                                examples['text'],
-                                truncation=True,
-                                max_length=max_length,
-                                padding=True
-                            )
-                            tokenized['labels'] = examples['label']
-                            return tokenized
-
-                        tokenized_train = train_dataset.map(preprocess_function, batched=True)
-                        tokenized_test = test_dataset.map(preprocess_function, batched=True)
+                        tokenized_train = train_dataset.map(model.preprocess_function, batched=True)
+                        tokenized_test = test_dataset.map(model.preprocess_function, batched=True)
                         tokenized_train = tokenized_train.remove_columns(['text', 'label'])
                         tokenized_test = tokenized_test.remove_columns(['text', 'label'])
 
-                        # Model
-                        bnb_config = BitsAndBytesConfig(
-                            load_in_4bit=True,
-                            bnb_4bit_quant_type='nf4',
-                            bnb_4bit_compute_dtype='float16',
-                            bnb_4bit_use_double_quant=True
-                        )
-                        model = AutoModelForSequenceClassification.from_pretrained(
-                            base_model_id,
-                            num_labels=len(unique_labels),
-                            device_map='auto',
-                            quantization_config=bnb_config
-                        )
-                        model.config.use_cache = False
-                        model.config.pad_token_id = tokenizer.pad_token_id
-
                         # PEFT
-                        peft_config = LoraConfig(
-                            lora_alpha=int(lora_alpha),
-                            lora_dropout=lora_dropout,
-                            r=int(lora_r),
-                            bias='none',
-                            task_type='SEQ_CLS',
-                            target_modules=['k_proj','gate_proj','v_proj','up_proj','q_proj','o_proj','down_proj']
-                        )
-                        model = prepare_model_for_kbit_training(model)
-                        model = get_peft_model(model, peft_config)
+                        model.lora_config(lora_alpha, lora_dropout, lora_r)
 
                         # SFTConfig 생성 (Streamlit 하이퍼파라미터 반영)
-                        sft_args = SFTConfig(
-                            output_dir=os.path.join(output_dir, model_name),
-                            learning_rate=learning_rate,
-                            per_device_train_batch_size=batch_size,
-                            per_device_eval_batch_size=batch_size,
-                            gradient_accumulation_steps=2,
-                            optim='paged_adamw_32bit',
-                            lr_scheduler_type='cosine',
-                            num_train_epochs=num_epochs,
-                            warmup_steps=50,
-                            logging_steps=10,
-                            fp16=True,
-                            gradient_checkpointing=True,
-                            dataset_text_field='text',
-                            max_length=max_length,
-                            label_names=['labels']
-                        )
+                        model.sft_config(output_dir, model_name, learning_rate, batch_size, num_epochs, max_length)
 
-                        data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-
-                        # Trainer
-                        trainer = SFTTrainer(
-                            model=model,
-                            train_dataset=tokenized_train,
-                            eval_dataset=tokenized_test,
-                            processing_class=tokenizer,
-                            args=sft_args,
-                            data_collator=data_collator,
-                            peft_config=peft_config
-                        )
-
-                        trainer.train()
-                        trainer.save_model(os.path.join(output_dir, model_name))
-                        tokenizer.save_pretrained(os.path.join(output_dir, model_name))
+                        # 모델 학습 및 저장
+                        model.train(output_dir, model_name, tokenized_train, tokenized_test)
 
                         st.success(f"모델 학습 완료! 저장 경로: {os.path.join(output_dir, model_name)}")
 
