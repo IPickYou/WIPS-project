@@ -1,59 +1,80 @@
 import streamlit as st
 
 def show():
-    st.write("**현재 카테고리 목록 (편집 가능):**")
+
+    default_categories = {
+        "CPC_C01B" : "Non-metal elements and their compounds (excluding CO2). Inorganic compounds without metals.",
+        "CPC_C01C" : "Ammonia, cyanide, and their compounds.",
+        "CPC_C01D" : "Alkali metal compounds such as lithium, sodium, potassium, rubidium, cesium, or francium.",
+        "CPC_C01F" : "Compounds of metals like beryllium, magnesium, aluminum, calcium, strontium, barium, radium, thorium, or rare earth metals.",
+        "CPC_C01G" : "Compounds containing metals not included in C01D or C01F."
+    }
     
-    categories_to_delete = []
-    updated_categories = {}
+    if 'categories' not in st.session_state:
+        st.session_state.categories = default_categories.copy()
     
-    for i, (code, description) in enumerate(st.session_state.categories.items()):
-        col_code, col_desc, col_delete = st.columns([1, 4, 1])
+    if 'num_categories' not in st.session_state:
+        st.session_state.num_categories = len(st.session_state.categories)
+    
+    with st.expander("**CATEGORY TO CLASSIFY**", expanded = False):
+
+        col1, col2 = st.columns([1, 3.19])
+
+        with col1:
+            st.write("**CATEGORY**")
+
+        with col2:
+            st.write("**DESCRIPTION**")
+    
+        updated_categories = {}
+        categories_to_remove = []
         
-        with col_code:
-            new_code = st.text_input(f"코드", value=code, key=f"code_{i}", label_visibility="collapsed")
-        with col_desc:
-            new_desc = st.text_area(f"설명", value=description, key=f"desc_{i}", height=68, label_visibility="collapsed")
-        with col_delete:
-            st.write("")  # 공간 확보
-            if st.button( key=f"delete_{i}", help="삭제"):
-                categories_to_delete.append(code)
+        category_items = list(st.session_state.categories.items())
         
-        updated_categories[new_code] = new_desc
-    
-    # 삭제된 카테고리 처리
-    if categories_to_delete:
-        for code in categories_to_delete:
-            if code in st.session_state.categories:
-                del st.session_state.categories[code]
-        st.rerun()
-    
-    # 변경사항 적용
-    st.session_state.categories = updated_categories
-    
-    # 새 카테고리 추가
-    st.write("**새 카테고리 추가:**")
-    col_new_code, col_new_desc, col_add = st.columns([1, 4, 1])
-    
-    with col_new_code:
-        new_category_code = st.text_input("카테고리 코드", placeholder="C01H", key="new_category_code")
-    with col_new_desc:
-        new_category_desc = st.text_area("카테고리 설명", placeholder="화학반응 - 특정 화학반응 과정 및 방법에 관한 분야", key="new_category_desc", height=68)
-    with col_add:
-        st.write("")  # 공간 확보
-        if st.button("추가", key="add_category_btn"):
-            if new_category_code.strip() and new_category_desc.strip():
-                st.session_state.categories[new_category_code.strip()] = new_category_desc.strip()
+        for i in range(st.session_state.num_categories):
+
+            col1, col2, col3 = st.columns([1, 3, 0.15])
+
+            default_key = category_items[i][0] if i < len(category_items) else f"CPC_CODE_{i+1}"
+            default_value = category_items[i][1] if i < len(category_items) else ""
+            
+            with col1:
+                code = st.text_input(f"CATEGORY {i + 1}", value=default_key, key = f"code_{i}")
+            with col2:
+                desc = st.text_area(f"DESCRIPTION {i + 1}", value=default_value, key = f"desc_{i}", height = 30)
+            with col3:
+                if st.button("✖️", key = f"remove_{i}", help = "삭제"):
+                    if st.session_state.num_categories > 1:
+                        categories_to_remove.append(i)
+            
+            if code.strip() and desc.strip():
+                updated_categories[code.strip()] = desc.strip()
+        
+        if categories_to_remove:
+
+            st.session_state.num_categories -= len(categories_to_remove)
+
+            remaining_items = []
+
+            for i, (key, value) in enumerate(category_items):
+                if i not in categories_to_remove:
+                    remaining_items.append((key, value))
+            
+            st.session_state.categories = dict(remaining_items)
+
+            st.rerun()
+
+        st.session_state.categories = updated_categories
+        
+        col1, col2 = st.columns([1, 5.5])
+
+        with col1:
+            if st.button("➕ ADD CATEGORY"):
+                st.session_state.num_categories += 1
                 st.rerun()
-            else:
-                st.error("코드와 설명을 모두 입력해주세요")
-    
-    # 초기화 버튼
-    if st.button("기본값으로 초기화", key="reset_categories_btn"):
-        st.session_state.categories = {
-            "C01B": "비금속 원소, 비금속 화합물 (예: 수소, 질소, 산소 관련 화합물)",
-            "C01C": "무기산, 무기산의 염 (예: 황산, 질산, 인산 등)",
-            "C01D": "할로겐 화합물 (예: 염소, 브롬, 플루오르 화합물)",
-            "C01F": "알칼리 금속, 알칼리 토금속, 희토류 금속 화합물",
-            "C01G": "귀금속, 기타 금속 화합물"
-        }
-        st.rerun()
+        
+        with col2:
+            if st.button("®️ RESET TO DEFAULT", key = "reset_categories_btn"):
+                st.session_state.categories = default_categories.copy()
+                st.session_state.num_categories = len(default_categories)
+                st.rerun()

@@ -1,134 +1,156 @@
-from datasets import Dataset
-from sklearn.model_selection import train_test_split
-from utils.transformers_settings import LLMModel
+# train.py
 
+from utils.transformers_settings import FineTuningClassifier, DataProcessor
 import os
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 def show():
-    st.write("### 모델 학습")
 
-    if st.session_state.uploaded_df is not None:
+    with st.expander("**COLUMNS TO USE FOR TRAIN**", expanded = True):
+
         df = st.session_state.uploaded_df
+        
+        available_cols = DataProcessor.get_available_columns(df)
+        selected_cols = st.multiselect(
+            "SELECTED COLUMNS",
+            options = available_cols,
+            default = [col for col in ["발명의 명칭", "요약", "전체청구항"] if col in available_cols],
+            key = "train_cols"
+        )
+        
+        if not selected_cols:
+            st.warning("Please select at least one column.")
 
-        # 데이터 미리보기
-        st.write("**학습 데이터 미리보기**")
-        st.dataframe(df.head())
-        st.caption(f"총 {len(df)} 행, {len(df.columns)} 열")
+    with st.expander("**HYPERPARAMETER**", expanded = False):
 
-        # 텍스트 & 라벨 컬럼 선택
-        col1, col2 = st.columns(2)
-        with col1:
-            text_column = st.selectbox("텍스트 컬럼", df.columns.tolist())
-        with col2:
-            label_column = st.selectbox("라벨 컬럼", df.columns.tolist())
-
-        if text_column and label_column:
-            clean_df = df[[text_column, label_column]].dropna()
-            clean_df[text_column] = clean_df[text_column].astype(str)
-
-            # 라벨 처리
-            st.write("**라벨 분포**")
-            label_series = clean_df[label_column]
-            if isinstance(label_series, pd.DataFrame):
-                label_series = label_series.iloc[:, 0]
-
-            label_counts = label_series.value_counts()
-            st.bar_chart(label_counts)
-
-            # 샘플 1개인 클래스 제거
-            rare_labels = label_counts[label_counts < 2].index.tolist()
-            if rare_labels:
-                st.warning(f"샘플 1개인 라벨 제거: {rare_labels}")
-                clean_df = clean_df[~clean_df[label_column].isin(rare_labels)]
-                label_series = clean_df[label_column]
-
-            if isinstance(label_series, pd.DataFrame):
-                label_series = label_series.iloc[:, 0]  # Series로 변환
-
-            unique_labels = sorted(label_series.unique())
-            label_to_id = {label: idx for idx, label in enumerate(unique_labels)}
-            id_to_label = {idx: label for label, idx in label_to_id.items()}
-
-            # 이제 Series이므로 map이 정상 작동
-            clean_df['label_id'] = label_series.map(label_to_id)
-
-            st.write("**라벨 매핑**")
-            for label, idx in label_to_id.items():
-                st.write(f"  - {label} → {idx}")
-
-            # 하이퍼파라미터
-            st.write("**하이퍼파라미터 설정**")
-            col_param1, col_param2, col_param3 = st.columns(3)
-
-            with col_param1:
-                base_model_id = st.selectbox(
-                    "베이스 모델 선택",
-                    ["meta-llama/Llama-3.2-1B", "bert-base-uncased", "roberta-base", "distilbert-base-uncased"],
-                    index=0,
-                    key="training_base_model"
+        try:
+            DataProcessor.validate_dataframe(df, ["사용자태그"])
+        except ValueError as e:
+            st.error(e)
+            return
+        
+        with st.expander("**QUANTIZATION**", expanded = False):
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                load_in_4bit = st.checkbox("4 - BIT QUANTIZATION", value = True)
+            with col2:
+                bnb_4bit_quant_type = st.selectbox("QUANTIZATION TYPE", ["nf4", "fp4"], index = 0)
+            with col3:
+                bnb_4bit_compute_dtype = st.selectbox("COMPUTE DTYPE", ["float16", "bfloat16", "float32"], index = 0)
+            with col4:
+                bnb_4bit_use_double_quant = st.checkbox("DOUBLE QUANTIZATION", value = True)
+        
+        with st.expander("**LoRA**", expanded = False):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                lora_r = st.number_input("LoRA RANK (R)", min_value = 4, max_value = 256, value = 64)
+                lora_alpha = st.number_input("LoRA ALPHA", min_value = 8, max_value = 512, value = 128)
+            with col2:
+                lora_dropout = st.number_input("LoRA DROPOUT", min_value = 0.0, max_value = 0.5, value = 0.1, step = 0.01)
+                bias_setting = st.selectbox("BIAS", ["none", "all", "lora_only"], index = 0)
+            with col3:
+                task_type = st.selectbox("TASK TYPE", ["SEQ_CLS", "CAUSAL_LM", "SEQ_2_SEQ_LM"], index = 0)
+                target_modules = st.multiselect(
+                    "TARGET MODULES",
+                    options = ['k_proj', 'gate_proj', 'v_proj', 'up_proj', 'q_proj', 'o_proj', 'down_proj'],
+                    default = ['k_proj', 'gate_proj', 'v_proj', 'up_proj', 'q_proj', 'o_proj', 'down_proj']
                 )
-                custom_model_id = st.text_input("직접 모델 입력 (HuggingFace Hub)", value="")
-                if custom_model_id.strip():
-                    base_model_id = custom_model_id.strip()
+        
+        with st.expander("**SFT**", expanded = False):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                epochs = st.number_input("EPOCHS", min_value = 1, max_value = 10, value = 5)
+                learning_rate = st.number_input("LEARNING RATE", min_value = 1e-7, max_value = 1e-3, value = 2e-5, format = "%.0e")
+            with col2:
+                warmup_steps = st.number_input("WARMUP STEPS", min_value = 0, max_value = 100, value = 50)
+                test_size = st.number_input("TEST SIZE", min_value = 0.1, max_value = 0.3, value = 0.2)
+            with col3:
+                max_length = st.number_input("MAX LENGTH", min_value = 128, max_value = 1024, value = 512)
+                stride = st.number_input("STRIDE", min_value = 10, max_value = 100, value = 50)
+            
+            model_name_input = st.text_input("OUTPUT DIR", value = "ft_gemma_2_2b")
+            output_dir = os.path.join(r"C:\company\wips", model_name_input)
 
-                learning_rate = st.number_input("학습률", value=2e-5, format="%.0e", key="training_lr")
-                num_epochs = st.number_input("에포크 수", value=3, min_value=1, max_value=20, key="training_epochs")
+    if st.button("**T R A I N**", type = "primary", use_container_width = True):
+        try:
+            model_name = st.session_state.get('ft_model_name', 'google/gemma-2-2b')
+            hf_token = st.session_state.get('ft_hf_token') or os.getenv('HF_TOKEN')
+            
+            classifier = FineTuningClassifier(model_name, hf_token)
+            
+            with st.spinner("INITIALIZING MODEL ..."):
+                classifier.initialize_tokenizer()
+            
+            with st.spinner("PREPROCESSING DATA ..."):
 
-            with col_param2:
-                batch_size = st.number_input("배치 크기", value=2, min_value=1, max_value=16, key="training_batch_size")
-                max_length = st.number_input("최대 토큰 길이", value=512, min_value=128, max_value=2048, key="training_max_length")
-                train_ratio = st.slider("학습 데이터 비율", 0.6, 0.9, 0.8, 0.05, key="training_ratio")
+                processed_df = classifier.prepare_data(df, selected_cols = selected_cols)
+                df_chunked = classifier.create_chunked_dataset(processed_df, max_length, stride)
+                
+                tokenized_train, tokenized_test, test_df = classifier.prepare_datasets(
+                    df_chunked, test_size = test_size
+                )
+            
+            with st.spinner("CONFIGURING MODEL ..."):
 
-            with col_param3:
-                lora_r = st.number_input("LoRA r", value=16, min_value=8, max_value=128, key="training_lora_r")
-                lora_alpha = st.number_input("LoRA alpha", value=32, min_value=16, max_value=256, key="training_lora_alpha")
-                lora_dropout = st.number_input("LoRA dropout", value=0.1, min_value=0.0, max_value=0.5, key="training_lora_dropout")
+                bnb_config_params = {
+                    'load_in_4bit': load_in_4bit,
+                    'bnb_4bit_quant_type': bnb_4bit_quant_type,
+                    'bnb_4bit_compute_dtype': bnb_4bit_compute_dtype,
+                    'bnb_4bit_use_double_quant': bnb_4bit_use_double_quant
+                }
+                
+                lora_config_params = {
+                    'lora_alpha': lora_alpha,
+                    'lora_dropout': lora_dropout,
+                    'r': lora_r,
+                    'bias': bias_setting,
+                    'task_type': task_type,
+                    'target_modules': target_modules
+                }
+                
+                classifier.setup_model(bnb_config_params, lora_config_params)
+            
+            with st.spinner("TRAINING MODEL ..."):
+                training_config_params = {
+                    'num_train_epochs': epochs,
+                    'learning_rate': learning_rate,
+                    'warmup_steps': warmup_steps,
+                    'max_length': max_length
+                }
+                
+                eval_results = classifier.train_model(
+                    tokenized_train, tokenized_test, output_dir,
+                    bnb_config_params, lora_config_params, training_config_params
+                )
+                
+                classifier.save_model(output_dir)
+            
+            st.toast("TRAIN IS COMPLETE")
+            
+            st.subheader("TRAIN RESULT")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("**ACCURACY**", f"{eval_results['eval_accuracy']:.4f}")
+            with col2:
+                st.metric("**F1 SCORE**", f"{eval_results['eval_f1']:.4f}")
+            with col3:
+                st.metric("**PRECISION**", f"{eval_results['eval_precision']:.4f}")
+            with col4:
+                st.metric("**RECALL**", f"{eval_results['eval_recall']:.4f}")
 
-            output_dir = st.text_input("출력 디렉토리", value="./output", key="training_output_dir")
-            model_name = st.text_input("저장할 모델 이름", value="my_model", key="training_model_name")
-
-            # 데이터 분할
-            clean_df['label_id'] = label_series.map(label_to_id)
-            train_texts, test_texts, train_labels, test_labels = train_test_split(
-                clean_df[text_column].values.tolist(),
-                clean_df['label_id'].values.tolist(),
-                train_size=train_ratio,
-                random_state=42
-            )
-
-            st.write(f"**데이터 분할**: 학습 {len(train_texts)}개, 테스트 {len(test_texts)}개")
-
-            # 학습 시작
-            if st.button("학습 시작", type="primary"):
-                with st.spinner("모델 학습을 진행합니다..."):
-                    try:
-                        # Model
-                        model = LLMModel(base_model_id, unique_labels, max_length)
-
-                        # Dataset
-                        train_dataset = Dataset.from_dict({'text': train_texts, 'label': train_labels})
-                        test_dataset = Dataset.from_dict({'text': test_texts, 'label': test_labels})
-
-                        tokenized_train = train_dataset.map(model.preprocess_function, batched=True)
-                        tokenized_test = test_dataset.map(model.preprocess_function, batched=True)
-                        tokenized_train = tokenized_train.remove_columns(['text', 'label'])
-                        tokenized_test = tokenized_test.remove_columns(['text', 'label'])
-
-                        # PEFT
-                        model.lora_config(lora_alpha, lora_dropout, lora_r)
-
-                        # SFTConfig 생성 (Streamlit 하이퍼파라미터 반영)
-                        model.sft_config(output_dir, model_name, learning_rate, batch_size, num_epochs, max_length)
-
-                        # 모델 학습 및 저장
-                        model.train(output_dir, model_name, tokenized_train, tokenized_test)
-
-                        st.success(f"모델 학습 완료! 저장 경로: {os.path.join(output_dir, model_name)}")
-
-                    except Exception as e:
-                        st.error(f"학습 중 오류 발생: {str(e)}")
-                        st.exception(e)
-    else:
-        st.info("먼저 사이드바에서 학습 데이터를 업로드해주세요.")
+            st.session_state.model_info = {
+                "model_path": output_dir,
+                "labels_list": classifier.labels_list,
+                "label2id": classifier.label2id,
+                "id2label": classifier.id2label
+            }
+            
+        except Exception as e:
+            st.error(e)
+            st.code(str(e))

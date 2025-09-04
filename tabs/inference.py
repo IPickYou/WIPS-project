@@ -1,122 +1,146 @@
-from utils import trained_model
+# inference.py
 
+from utils.transformers_settings import FineTuningClassifier
+from utils import excel_download
 import os
 import streamlit as st
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 def show():
-    st.write("### 모델 추론")
-    st.write("**모델 설정**")
 
-    # 모델 설정
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        model_id = st.text_input(
-            "베이스 모델 ID",
-            value="meta-llama/Llama-3.2-1B",
-            key="model_id"
-        )
-        
-        tokenizer_path = st.text_input(
-            "토크나이저 경로",
-            value="C:/aimer/wips/models/wips_t",
-            key="tokenizer_path"
-        )
-    
-    with col2:
-        hf_token = st.text_input(
-            "HuggingFace Token",
-            value=os.getenv("HF_TOKEN"),
-            type="password",
-            key="hf_token"
-        )
-        
-        num_labels = st.number_input(
-            "라벨 수",
-            min_value=2,
-            max_value=100,
-            value=5,
-            key="num_labels"
-        )
-    if st.button("🔄 모델 로드"):
-        trained_model.load(model_id, hf_token, num_labels, tokenizer_path)
-                
-    # 모델 상태 표시
-    if st.session_state.get('model_loaded', False):
-        st.success(" 모델이 로드되어 추론 준비가 완료되었습니다!")
-        
-        # 모델 정보 표시
-        with st.expander("모델 정보"):
-            model = st.session_state.model
-            st.write(f"- 모델 타입: {model.config.model_type}")
-            st.write(f"- 라벨 수: {model.config.num_labels}")
-            if hasattr(model.config, 'id2label') and model.config.id2label:
-                st.write("- 라벨 매핑:")
-                for id_val, label in model.config.id2label.items():
-                    st.write(f"  - {id_val}: {label}")
-    else:
-        st.warning(" 모델을 먼저 로드해주세요.")
+    with st.expander("**COLUMNS TO USE FOR INFERENCE**", expanded = True):
 
-    st.markdown("---")
-    
-    # 추론 데이터 준비
-    st.write("**추론 데이터 설정**")
-    
-    # 추론 실행
-    if st.session_state.get('uploaded_df') is not None and st.session_state.get('model_loaded', False):
-        trained_model.inference()
-
-    elif st.session_state.get('uploaded_df') is None:
-        st.info("먼저 사이드바에서 엑셀 파일을 업로드해주세요.")
-    elif not st.session_state.get('model_loaded', False):
-        st.info("먼저 모델을 로드해주세요.")
-
-    # 추론 결과 표시
-    if st.session_state.get('inference_results'):
-        st.write(" **추론 결과**")
-        results = st.session_state.inference_results
+        df = st.session_state.uploaded_df
         
-        # 결과를 DataFrame으로 변환
-        import pandas as pd
-        results_df = pd.DataFrame(results)
-        
-        # 결과 요약
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("총 샘플 수", len(results_df))
-        with col2:
-            if 'predicted_class' in results_df.columns:
-                unique_classes = results_df['predicted_class'].nunique()
-                st.metric("예측된 클래스 수", unique_classes)
-        
-        # 클래스별 분포 표시
-        if 'predicted_class' in results_df.columns:
-            st.write("**클래스별 분포:**")
-            class_counts = results_df['predicted_class'].value_counts()
-            st.bar_chart(class_counts)
-        
-        # 결과 데이터프레임 표시
-        st.write("**상세 결과:**")
-        st.dataframe(results_df)
-        
-        # CSV 다운로드 버튼
-        csv = results_df.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button(
-            label=" 추론 결과 CSV 다운로드",
-            data=csv,
-            file_name="inference_results.csv",
-            mime="text/csv"
+        selected_cols = st.multiselect(
+            "SELECTED COLUMNS",
+            options = df.columns.tolist(),
+            default = [col for col in ["발명의 명칭", "요약", "전체청구항"] if col in df.columns.tolist()],
+            key = "inference_cols"
         )
         
-        # 원본 데이터와 결합된 결과 다운로드
-        if st.session_state.get('uploaded_df') is not None:
-            original_df = st.session_state.uploaded_df.copy()
-            original_df['predicted_class'] = [r['predicted_class'] for r in results]
-            
-            combined_csv = original_df.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label=" 원본+예측결과 통합 CSV 다운로드",
-                data=combined_csv,
-                file_name="combined_results.csv",
-                mime="text/csv"
+        if not selected_cols:
+            st.warning("Please select at least one column.")
+
+    with st.expander("**MODEL TO USE FOR INFERENCE**", expanded = False):
+
+        model_selection_method = st.radio(
+            "MODEL SELECTION METHOD",
+            ["AUTOMATIC SEARCH", "MANUAL PATH ENTRY"],
+            key = "model_selection_method"
+        )
+        
+        if model_selection_method == "MANUAL PATH ENTRY":
+            model_path = st.text_input(
+                "원하는 모델의 경로를 입력하세요.",
+                value = r"C:\company\wips\excel_gemma_2_2b",
+                help = "학습시킨 모델이 저장되어 있는 전체 경로를 입력하세요."
             )
+        else:
+            base_dir = r"C:\company\wips"
+            
+            if os.path.exists(base_dir):
+                try:
+                    all_items = [item for item in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, item))]
+                    
+                    valid_models = []
+                    for item in all_items:
+                        item_path = os.path.join(base_dir, item)
+                        if os.path.exists(os.path.join(item_path, 'label_mappings.pkl')):
+                            valid_models.append(item)
+                    
+                    if valid_models:
+                        selected_model = st.selectbox(
+                            "검색된 모델 중 하나를 선택하세요.",
+                            options = valid_models
+                        )
+                        model_path = os.path.join(base_dir, selected_model)
+                    else:
+                        st.warning("No model could be found using automatic search.")
+                        model_path = st.text_input(
+                            "모델의 경로를 직접 입력하세요.",
+                            value = r"C:\company\wips\excel_gemma_2_2b"
+                        )
+                except Exception as e:
+                    st.error(e)
+                    model_path = st.text_input(
+                        "모델의 경로를 직접 입력하세요.",
+                        value = r"C:\company\wips\excel_gemma_2_2b"
+                    )
+            else:
+                st.error(f"The default directory does not exist. : {base_dir}")
+                model_path = st.text_input(
+                    "모델의 경로를 직접 입력하세요.",
+                    value = r"C:\company\wips\excel_gemma_2_2b"
+                )
+        
+        model_exists = False
+        
+        if model_path and os.path.exists(model_path):
+            label_file_path = os.path.join(model_path, 'label_mappings.pkl')
+            
+            if os.path.exists(label_file_path):
+                model_exists = True
+                st.success("A model is available.")
+                
+                try:
+                    import pickle
+                    with open(label_file_path, 'rb') as f:
+                        mappings = pickle.load(f)
+                        model_labels = mappings['labels_list']
+                        
+                        with st.expander("**LABELS FOR THE TRAINED MODEL**", expanded = False):
+                            st.write(sorted(model_labels))
+                                
+                except Exception as e:
+                    st.error(e)
+            else:
+                st.warning("No model is available.")
+        else:
+            st.warning("No model is available.")
+        
+    if model_exists:
+        with st.expander("**HYPERPARAMETER**", expanded = False):
+            col1, col2 = st.columns(2)
+            with col1:
+                chunk_max_length = st.number_input("MAX LENGTH", min_value = 128, max_value = 1024, value = 512, key = "chunk_max_length")
+            with col2:
+                chunk_stride = st.number_input("STRIDE", min_value = 10, max_value = 100, value = 50, key = "chunk_stride")
+
+    if st.button("**I N F E R E N C E**", type = "primary", use_container_width = True, disabled = not model_exists):
+        try:
+            model_name = st.session_state.get('ft_model_name', 'google/gemma-2-2b')
+            hf_token = st.session_state.get('ft_hf_token') or os.getenv('HF_TOKEN')
+            
+            classifier = FineTuningClassifier(model_name, hf_token)
+            
+            with st.spinner("LOADING MODEL ..."):
+                classifier.load_model(model_path)
+            
+            with st.spinner("RUNNING INFERENCE ..."):
+                results_df = classifier.predict_patents(
+                    df, model_path, 
+                    selected_cols = selected_cols,
+                    max_length = chunk_max_length,
+                    stride = chunk_stride
+                )
+            
+            st.toast("INFERENCE IS COMPLETE")
+            
+            st.subheader("INFERENCE RESULT")
+            st.dataframe(results_df, use_container_width = True)
+            
+            st.subheader("PREDICTION DISTRIBUTION")
+            pred_counts = results_df['예측_라벨'].value_counts()
+            st.bar_chart(pred_counts)
+            
+            st.session_state.inference_results = results_df
+            
+            excel_download.show_finetuning(results_df)
+            
+        except Exception as e:
+            st.error(e)
+            st.code(str(e))
