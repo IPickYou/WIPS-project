@@ -1,6 +1,6 @@
 # inference.py
 
-from utils.transformers_settings import FineTuningClassifier
+from utils.finetuning_classifier import FineTuningClassifier
 from utils import excel_download
 import os
 import glob

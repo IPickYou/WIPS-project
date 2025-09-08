@@ -1,6 +1,7 @@
 # train.py
 
-from utils.transformers_settings import FineTuningClassifier, DataProcessor
+from utils.data_proceesor import DataProcessor
+from utils.finetuning_classifier import FineTuningClassifier
 import os
 import pandas as pd
 import streamlit as st
