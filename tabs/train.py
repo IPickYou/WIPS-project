@@ -1,7 +1,8 @@
 # train.py
 
 from utils.data_proceesor import DataProcessor
-from utils.finetuning_classifier import FineTuningClassifier
+from utils.finetuning_trainer import FineTuningTrainer
+from utils.text_chunker import SlidingWindowChunker
 import os
 import pandas as pd
 import streamlit as st
@@ -10,10 +11,8 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv()
 
-
 def show():
     with st.expander("**COLUMNS TO USE FOR TRAIN**", expanded=True):
-
         df = st.session_state.uploaded_df
 
         available_cols = DataProcessor.get_available_columns(df)
@@ -28,7 +27,6 @@ def show():
             st.warning("Please select at least one column.")
 
     with st.expander("**HYPERPARAMETER**", expanded=False):
-
         try:
             DataProcessor.validate_dataframe(df, ["사용자태그"])
         except ValueError as e:
@@ -83,23 +81,24 @@ def show():
             model_name = st.session_state.get('ft_model_name', 'google/gemma-2-2b')
             hf_token = st.session_state.get('ft_hf_token') or os.getenv('HF_TOKEN')
 
-            classifier = FineTuningClassifier(model_name, hf_token)
+            trainer = FineTuningTrainer(model_name, hf_token)
 
             with st.spinner("INITIALIZING MODEL ..."):
-                classifier.initialize_tokenizer()
+                trainer.initialize_tokenizer()
 
             with st.spinner("PREPROCESSING DATA ..."):
-
-                processed_df = classifier.prepare_data(df, selected_cols=selected_cols)
-                df_chunked = classifier.create_chunked_dataset(processed_df, max_length, stride)
+                processed_df = DataProcessor.prepare_data(trainer, df, selected_cols=selected_cols)
+                
+                chunker = SlidingWindowChunker(trainer.tokenizer)
+                
+                df_chunked = chunker.create_chunked_dataset(processed_df, max_length, stride)
 
                 # 수정된 부분: 반환값 2개만 받음
-                tokenized_dataset, test_df = classifier.create_balanced_datasetdict(
+                tokenized_dataset, test_df = DataProcessor.create_balanced_datasetdict(
                     df_chunked, test_size=test_size
                 )
 
             with st.spinner("CONFIGURING MODEL ..."):
-
                 bnb_config_params = {
                     'load_in_4bit': load_in_4bit,
                     'bnb_4bit_quant_type': bnb_4bit_quant_type,
@@ -116,7 +115,7 @@ def show():
                     'target_modules': target_modules
                 }
 
-                classifier.setup_model(bnb_config_params, lora_config_params)
+                trainer.setup_model(bnb_config_params, lora_config_params)
 
             with st.spinner("TRAINING MODEL ..."):
                 training_config_params = {
@@ -127,12 +126,12 @@ def show():
                 }
 
                 # 수정된 부분: train_model 에 tokenized_dataset 전달
-                eval_results = classifier.train_model(
+                eval_results = trainer.train_model(
                     tokenized_dataset, output_dir,
                     bnb_config_params, lora_config_params, training_config_params
                 )
 
-                classifier.save_model(output_dir)
+                trainer.save_model(output_dir)
             try:
                 test_save_path = os.path.join(output_dir, "test_data.csv")
                 test_df.to_csv(test_save_path, index=False, encoding="utf-8-sig")
@@ -156,9 +155,9 @@ def show():
 
             st.session_state.model_info = {
                 "model_path": output_dir,
-                "labels_list": classifier.labels_list,
-                "label2id": classifier.label2id,
-                "id2label": classifier.id2label
+                "labels_list": trainer.labels_list,
+                "label2id": trainer.label2id,
+                "id2label": trainer.id2label
             }
 
         except Exception as e:

@@ -1,6 +1,6 @@
 # inference.py
 
-from utils.finetuning_classifier import FineTuningClassifier
+from utils.finetuning_inference import FineTuningInference
 from utils import excel_download
 import os
 import glob
@@ -141,13 +141,13 @@ def show():
             model_name = st.session_state.get('ft_model_name', 'google/gemma-2-2b')
             hf_token = st.session_state.get('ft_hf_token') or os.getenv('HF_TOKEN')
 
-            classifier = FineTuningClassifier(model_name, hf_token)
+            inference = FineTuningInference(model_name, hf_token)
 
             with st.spinner("LOADING MERGED MODEL ..."):
-                classifier.load_model(model_path, is_merged_model=True)
+                inference.load_model(model_path, is_merged_model=True)
 
             with st.spinner("RUNNING INFERENCE ..."):
-                results_df = classifier.predict_patents(
+                results_df = inference.predict_patents(
                     df, model_path,
                     selected_cols=selected_cols,
                     max_length=chunk_max_length,
