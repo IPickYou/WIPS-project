@@ -12,7 +12,7 @@ async-lru==2.0.5
 attrs==25.3.0
 babel==2.17.0
 beautifulsoup4==4.13.5
-bitsandbytes @ https://github.com/bitsandbytes-foundation/bitsandbytes/releases/download/continuous-release_main/bitsandbytes-1.33.7.preview-py3-none-win_amd64.whl#sha256=67449667411faa5f7a42d7b9b0df3a14412e2041fbbeb1c0afb928143e2dfe25
+bitsandbytes @ https://github.com/bitsandbytes-foundation/bitsandbytes/releases/download/continuous-release_main/bitsandbytes-1.33.7.preview-py3-none-win_amd64.whl
 bleach==6.2.0
 blinker==1.9.0
 cachetools==6.2.0
