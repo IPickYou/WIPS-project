@@ -1,5 +1,5 @@
 # utils/text_chunker.py
-
+import pandas as pd
 class SlidingWindowChunker:
     def __init__(self, tokenizer):
         self.tokenizer = tokenizer

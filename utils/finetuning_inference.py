@@ -14,6 +14,7 @@ import pickle
 from safetensors.torch import load_file
 from dotenv import load_dotenv
 from utils.data_proceesor import DataProcessor
+from utils.text_chunker import SlidingWindowChunker
 
 # .env 파일 로드
 load_dotenv()

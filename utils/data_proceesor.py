@@ -1,5 +1,5 @@
 # utils/data_processor.py
-
+from datasets import Dataset, DatasetDict
 import pandas as pd
 
 class DataProcessor:
@@ -47,7 +47,7 @@ class DataProcessor:
                 "labels": df_copy["사용자태그"],
                 "patent_id": df_copy["출원번호"]
             })
-            processed_df["label"] = processed_df["labels"].map(classifier.label2id)
+            processed_df["label"] = processed_df["labels"].map(executor.label2id)
 
         else:
             processed_df = pd.DataFrame({

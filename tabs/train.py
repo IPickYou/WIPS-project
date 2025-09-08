@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
+from datasets import Dataset, DatasetDict
 
 # .env 파일 로드
 load_dotenv()
@@ -95,7 +96,7 @@ def show():
 
                 # 수정된 부분: 반환값 2개만 받음
                 tokenized_dataset, test_df = DataProcessor.create_balanced_datasetdict(
-                    df_chunked, test_size=test_size
+                    df_chunked, trainer.tokenizer, test_size=test_size
                 )
 
             with st.spinner("CONFIGURING MODEL ..."):
