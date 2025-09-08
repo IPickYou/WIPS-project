@@ -35,4 +35,6 @@ class SlidingWindowChunker:
                     chunk_row["label"] = row["label"]
                 chunked_rows.append(chunk_row)
 
+        print(f"chunked! {chunked_rows[:1]}")
+
         return pd.DataFrame(chunked_rows)
