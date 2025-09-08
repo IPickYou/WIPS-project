@@ -1,5 +1,7 @@
 # utils/data_processor.py
 
+import pandas as pd
+
 class DataProcessor:
     @staticmethod
     def validate_dataframe(df, required_cols=None):

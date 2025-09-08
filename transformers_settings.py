@@ -14,7 +14,6 @@ import pickle
 from safetensors.torch import load_file
 from dotenv import load_dotenv
 
-# .env 파일 로드
 load_dotenv()
 
 
